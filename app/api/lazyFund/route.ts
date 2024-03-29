@@ -9,61 +9,65 @@ import { ReadableStream } from "stream/web";
  * @returns
  */
 async function lazyFund(filesize: string): Promise<string> {
-	// nodeJS client
-	const key = process.env.PRIVATE_KEY;
-	const token = process.env.NEXT_PUBLIC_TOKEN || "";
-	const network = process.env.NEXT_PUBLIC_NETWORK || "devnet";
-	const providerUrl = getRpcUrl(token || "");
+  // nodeJS client
+  const key = process.env.PRIVATE_KEY;
+  const token = process.env.NEXT_PUBLIC_TOKEN || "";
+  const network = process.env.NEXT_PUBLIC_NETWORK || "devnet";
+  const providerUrl = getRpcUrl(token || "");
 
-	const serverIrys = new Irys({
-		//@ts-ignore
-		network, // mainnet || devnet
-		token, // Token used for payment and signing
-		key: key,
-		config: { providerUrl }, // Optional provider URL, only required when using Devnet
-	});
-	console.log(
-		"serverIrysPubKey",
-		//@ts-ignore
-		serverIrys.tokenConfig.getPublicKey().toJSON(),
-	);
+  const serverIrys = new Irys({
+    //@ts-ignore
+    network, // mainnet || devnet
+    token, // Token used for payment and signing
+    key: key,
+    config: { providerUrl }, // Optional provider URL, only required when using Devnet
+  });
+  console.log(
+    "serverIrysPubKey",
+    //@ts-ignore
+    serverIrys.tokenConfig.getPublicKey().toJSON()
+  );
 
-	const price = await serverIrys.getPrice(parseInt(filesize));
-	const balance = await serverIrys.getLoadedBalance();
+  const price = await serverIrys.getPrice(parseInt(filesize));
+  const balance = await serverIrys.getLoadedBalance();
 
-	let fundTx;
-	if (price.isGreaterThanOrEqualTo(balance)) {
-		console.log("Funding node.");
-		fundTx = await serverIrys.fund(price);
-		console.log("Successfully funded fundTx=", fundTx);
-	} else {
-		console.log("Funding not needed, balance sufficient.");
-	}
+  let fundTx;
+  if (price.isGreaterThanOrEqualTo(balance)) {
+    console.log("Funding node.");
+    fundTx = await serverIrys.fund(price);
+    console.log("Successfully funded fundTx=", fundTx);
+  } else {
+    console.log("Funding not needed, balance sufficient.");
+  }
 
-	// return the transaction id
-	return fundTx?.id || "";
+  // return the transaction id
+  return fundTx?.id || "";
 }
 
-async function readFromStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
-	if (!stream) return "";
-	const reader = stream.getReader();
-	let result = "";
+async function readFromStream(
+  stream: ReadableStream<Uint8Array> | null
+): Promise<string> {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  let result = "";
 
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		result += new TextDecoder().decode(value);
-	}
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    result += new TextDecoder().decode(value);
+  }
 
-	return result;
+  return result;
 }
 
 export async function POST(req: Request) {
-	//@ts-ignore
-	const rawData = await readFromStream(req.body as ReadableStream<Uint8Array> | null);
+  //@ts-ignore
+  const rawData = await readFromStream(
+    req.body as ReadableStream<Uint8Array> | null
+  );
 
-	const body = JSON.parse(rawData);
-	const fundTx = await lazyFund(body);
+  const body = JSON.parse(rawData);
+  const fundTx = await lazyFund(body);
 
-	return NextResponse.json({ txResult: fundTx });
+  return NextResponse.json({ txResult: fundTx });
 }

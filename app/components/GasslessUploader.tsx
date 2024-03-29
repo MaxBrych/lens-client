@@ -1,18 +1,12 @@
 "use client";
 
 import { AiOutlineFileSearch } from "react-icons/ai";
-import { PiReceiptLight } from "react-icons/pi";
-
 import Button from "./Button";
+import { PiReceiptLight } from "react-icons/pi";
 import ReceiptJSONView from "./ReceiptJSONView";
 import Spinner from "./Spinner";
-import UploadViewer from "./UploadViewer";
-import Switch from "react-switch";
 import fileReaderStream from "filereader-stream";
-import { fundAndUpload } from "../utils/fundAndUpload";
-import { gaslessFundAndUpload } from "../utils/gaslessFundAndUpload";
-// import { encryptAndUploadFile } from "../utils/lit";
-
+import gasslessFundAndUpload from "../../utils/gasslessFundAndUpload";
 import getIrys from "../utils/getIrys";
 import { useCallback } from "react";
 import { useEffect } from "react";
@@ -30,24 +24,18 @@ interface FileWrapper {
   file: File;
   isUploaded: boolean;
   id: string;
-  previewURL: string;
+  previewUrl: string;
   loadingReceipt: boolean;
 }
 
 interface UploaderConfigProps {
   showImageView?: boolean;
   showReceiptView?: boolean;
-  encryptData?: boolean;
-  gasless?: boolean;
-  onSuccess?: (uri: string) => void;
 }
 
-export const Uploader: React.FC<UploaderConfigProps> = ({
+export const GaslessUploader: React.FC<UploaderConfigProps> = ({
   showImageView = true,
   showReceiptView = true,
-  encryptData = false,
-  gasless = false,
-  onSuccess,
 }) => {
   const [files, setFiles] = useState<FileWrapper[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -75,7 +63,7 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
         file,
         isUploaded: false,
         id: "",
-        previewURL: "",
+        previewUrl: "",
         loadingReceipt: false,
       }));
       setFiles(newUploadedFiles);
@@ -102,86 +90,30 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
       return;
     }
     setTxProcessing(true);
+    try {
+      for (const file of files) {
+        const tags: Tag[] = [{ name: "Content-Type", value: file.file.type }];
+        const uploadTxId = await gasslessFundAndUpload(file.file, tags);
 
-    // if (encryptData) {
-    // 	const uploadedTx = await encryptAndUploadFile(files[0].file);
-    // 	files[0].id = uploadedTx;
-    // 	files[0].isUploaded = true;
-    // 	files[0].previewURL = uploadedTx;
-    // 	setTxProcessing(false);
-    // 	return;
-    // }
-
-    // If more than one file is selected, then all files are wrapped together and uploaded in a single tx
-    if (files.length > 1) {
-      try {
-        // Remove the File objects from the FileWrapper objects
-        const filesToUpload: File[] = files.map((file) => file.file);
-        console.log("Multi-file upload");
-        let [manifestId, receiptId] = "";
-        if (gasless) {
-          console.log("Gasless upload");
-          [manifestId, receiptId] = await gaslessFundAndUpload(
-            filesToUpload,
-            []
-          );
-        } else {
-          console.log("Standard upload");
-          [manifestId, receiptId] = await fundAndUpload(filesToUpload, []);
-        }
-        console.log(
-          `Upload success manifestId=${manifestId} receiptId=${receiptId}`
-        );
-        // Now that the upload is done, update the FileWrapper objects with the preview URL
-        const updatedFiles = files.map((file) => ({
-          ...file,
-          id: receiptId,
-          isUploaded: true,
-          previewURL: manifestId + "/" + file.file.name,
-        }));
-        setFiles(updatedFiles);
-      } catch (e) {
-        console.log("Error on upload: ", e);
+        file.id = uploadTxId;
+        file.isUploaded = true;
+        file.previewUrl = GATEWAY_BASE + uploadTxId;
+        console.log("set previewURL=", file.previewUrl);
       }
-    } else {
-      console.log("Single file upload");
-      // This occurs when exactly one file is selected
-      if (files.length === 1) {
-        try {
-          const file = files[0]; // Single file scenario
-          const tags: Tag[] = [{ name: "Content-Type", value: file.file.type }];
-          let uploadedTx = "";
-          if (gasless) {
-            console.log("Gasless upload");
-            uploadedTx = await gaslessFundAndUpload(file.file, tags);
-          } else {
-            console.log("Standard upload");
-            uploadedTx = await fundAndUpload(file.file, tags);
-          }
-          file.id = uploadedTx;
-          file.isUploaded = true;
-          file.previewURL = uploadedTx; // Assuming this generates a valid URI
-
-          // Correctly call onSuccess with the URI
-          if (onSuccess) {
-            onSuccess(file.previewURL);
-          }
-        } catch (e) {
-          console.log("Error on upload: ", e);
-        }
-      }
+      setFiles([...files]);
+    } catch (e) {
+      console.log("Error on upload: ", e);
     }
     setTxProcessing(false);
   };
 
-  //	const showReceipt = async (fileIndex: number) => {
-  const showReceipt = async (fileIndex: number, receiptId: string) => {
+  const showReceipt = async (fileIndex: number) => {
     let updatedFiles = [...files];
     updatedFiles[fileIndex].loadingReceipt = true;
     setFiles(updatedFiles);
     try {
       const irys = await getIrys();
-      const receipt = await irys.utils.getReceipt(receiptId);
+      const receipt = await irys.utils.getReceipt(files[fileIndex].id);
       setReceipt(JSON.stringify(receipt));
       setPreviewURL(""); // Only show one or the other
     } catch (e) {
@@ -197,7 +129,13 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
   const memoizedPreviewURL = useMemo(() => {
     if (previewURL) {
       return (
-        <UploadViewer previewURL={previewURL} checkEncrypted={encryptData} />
+        <div>
+          <img
+            className="object-cover w-full h-full resize-none rounded-xl bg-primary"
+            src={previewURL}
+            alt="Thumbnail"
+          />
+        </div>
       );
     }
     return null;
@@ -235,7 +173,7 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
                   file,
                   isUploaded: false,
                   id: "",
-                  previewURL: "",
+                  previewUrl: "",
                   loadingReceipt: false,
                 })
               );
@@ -279,7 +217,7 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
                         {showImageView && (
                           <button
                             className="flex items-center justify-center w-10 h-10 p-2 text-white transition-colors duration-500 ease-in-out bg-black rounded-full font-xs hover:text-white"
-                            onClick={() => setPreviewURL(file.previewURL)}
+                            onClick={() => setPreviewURL(file.previewUrl)}
                           >
                             <AiOutlineFileSearch className="white-2xl" />
                           </button>
@@ -290,7 +228,7 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
                         {showReceiptView && (
                           <button
                             className="flex items-center justify-center w-10 h-10 p-2 text-white transition-colors duration-500 ease-in-out bg-black rounded-full font-xs hover:text-white"
-                            onClick={() => showReceipt(index, file.id)}
+                            onClick={() => showReceipt(index)}
                           >
                             {file.loadingReceipt ? (
                               <Spinner color="text-background" />
@@ -313,7 +251,7 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
             </div>
           )}
           {memoizedPreviewURL && (
-            <div className="h-56 flex justify-center space-y-4 bg-[#EEF0F6]/60 rounded-xl overflow-auto">
+            <div className="h-96 flex justify-center space-y-4 bg-[#EEF0F6]/60 rounded-xl overflow-auto">
               {memoizedPreviewURL}
             </div>
           )}
@@ -321,8 +259,7 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
           <Button
             onClick={handleUpload}
             disabled={txProcessing}
-            requireLitAuth={encryptData}
-            checkConnect={!gasless}
+            checkConnect={false}
           >
             {txProcessing ? <Spinner color="text-background" /> : "Upload"}
           </Button>
@@ -332,4 +269,19 @@ export const Uploader: React.FC<UploaderConfigProps> = ({
   );
 };
 
-export default Uploader;
+export default GaslessUploader;
+
+/* 
+USAGE:
+- Default: 
+  <Uploader />
+
+- To hide the image view button:
+  <Uploader showImageView={false} />
+
+- To hide the receipt view button:
+<Uploader showReceiptView={false} />
+
+Note:
+* Default behavior is to show both image view and receipt view
+*/
